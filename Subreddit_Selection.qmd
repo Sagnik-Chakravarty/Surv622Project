@@ -1,0 +1,105 @@
+---
+title: "Assignment2 622"
+author: "Sagnik Chakravarty"
+format: pdf
+editor: visual
+---
+
+```{r warning = FALSE, message=FALSE, include=FALSE}
+library(RedditExtractoR)
+library(tidytext)
+library(dplyr)
+library(pander)
+library(knitr)
+library(ggplot2)
+library(gridExtra)
+library(scales)
+library(topicmodels)
+library(stringr)
+library(quanteda)
+library(kableExtra)
+```
+
+## Find Subreddits
+
+```{r}
+war_sub_df <- find_subreddits("Russia Ukraine")
+war_sub_df <- data.frame(war_sub_df)
+war_sub_df_clean <- war_sub_df %>%
+  select(subreddit, 
+         title, 
+         description, 
+         subscribers, 
+         date_utc)
+```
+
+```{r}
+war_sub_df_clean$date_utc <- as.Date(war_sub_df_clean$date_utc)
+rownames(war_sub_df_clean) <- 1:nrow(war_sub_df_clean)
+str(head(war_sub_df_clean, 1))
+pander(dim(war_sub_df))
+pander(dim(war_sub_df_clean))
+```
+
+```{r}
+war_sub_df_clean %>%ggplot(aes(x = subreddit, y = subscribers))+
+  geom_bar(stat = 'identity',
+           color = 'black',
+           fill = 'red')+
+  theme(axis.text.x = element_text(angle = 90,
+                                   vjust = 0,
+                                   hjust = 1,
+                                   size = 2))+
+  scale_y_continuous(
+    breaks = pretty_breaks(n=5))
+```
+
+```{r warning = FALSE, message=FALSE}
+desc_clean <- function(x){
+  tk <- tibble(line = 1, text = x)
+  tk <- tk %>% 
+    unnest_tokens(word, text) %>% 
+    anti_join(stop_words)
+  return(tolower(str_c(tk$word, collapse = ' ')))
+}
+
+war_sub_df_clean <- war_sub_df_clean %>%
+  rowwise() %>%
+  mutate(cleaned_description = desc_clean(description)) %>%
+  select(-description) %>%
+  ungroup()
+```
+
+```{r}
+check_war <- function(x) {
+  keywords <- c('Zelensky', 'Putin', 'Trump', 'USA', 'United States', 
+                'America', 'American', 'Europe', 'EU', 
+                'Russia Ukraine', 'War', 'Russia', 
+                'Ukraine',  'Minerals Deal', 'Ceasefire', 'Security')
+
+  pattern <- paste0("\\b(", paste(keywords, collapse = "|"), ")\\b")
+  
+  any(str_detect(x, regex(pattern, ignore_case = TRUE)))
+}
+
+war_sub_df_clean <- war_sub_df_clean %>% 
+  rowwise()  %>%
+  mutate(war_related = if_else(check_war(cleaned_description), TRUE, FALSE)) %>%
+  ungroup()
+```
+
+```{r}
+subreddit_df <- war_sub_df_clean %>%
+  filter(war_related == TRUE) %>%
+  arrange(desc(subscribers))  %>% 
+  head(n=10)
+subreddit_df[c(-5,-6)] %>%
+  pander(caption = "Subreddits Related to Ukraine Russia War")
+
+
+subreddit_df %>% ggplot(aes(x = subscribers,
+                         y = subreddit))+
+  geom_bar(stat = 'identity',
+           fill = 'black')+
+  theme_classic()
+```
