@@ -193,15 +193,41 @@ embeddings <- lapply(sentences, get_valid_embedding)
 
 # Filter out NULLs and convert to matrix
 valid_embeddings <- Filter(Negate(is.null), embeddings)
-X <- do.call(rbind, valid_embeddings)
+X_full <- do.call(rbind, valid_embeddings)
 
-colnames(X) <- colnames(X_train)
+colnames(X_full) <- colnames(X_train)
 ```
 
 ```{r}
-data$Sentiment_ML_predicted <- predict(tree_model, newdata = data.frame(X), type = 'class')
+data$Sentiment_ML_predicted <- predict(tree_model, newdata = data.frame(X_full), type = 'class')
 ```
 
 ```{r}
 write_csv(data, file = 'ML_Predicted_Sentiment.csv')
+```
+
+```{r}
+data_sample$indices <- 1:nrow(data_sample)
+svm_pred <- predict(svm_model, X)
+```
+
+```{r}
+svm_pred <- data.frame(SVM_Pred = svm_pred)
+tree_pred <- data.frame(Tree_Pred = predict(tree_model,
+                                                data.frame(X), type = 'class'))
+svm_pred$indices <- which(valid_rows)
+tree_pred$indices <- which(valid_rows)
+
+data_sample <- data_sample %>%
+  right_join(svm_pred, by = 'indices') %>%
+  right_join(tree_pred, by = 'indices') %>%
+  select(-indices)
+```
+
+```{r}
+head(data_sample)
+```
+
+```{r}
+write.csv(data_sample, "MLSentiment.csv")
 ```
