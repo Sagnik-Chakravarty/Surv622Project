@@ -1,0 +1,207 @@
+---
+title: "Assignment2"
+author: "Sagnik Chakravarty"
+format: pdf
+editor: visual
+---
+
+# Loading the data
+
+```{r warning=FALSE, message=FALSE}
+library(tm)
+library(ggplot2)
+library(word2vec)
+library(uwot)
+library(glmnet)
+library(text2vec)
+cos.sim <- function(a,b) 
+{
+
+    return( sum(a*b)/sqrt(sum(a^2)*sum(b^2)) )
+} 
+library(readr)
+library(readxl)
+library(dplyr)
+data <- read_csv("thread_cleaned.csv")
+data_sample <-  read_excel("~/Desktop/UMD_College_Work/Semester 2/SURV622/Assignment/SURV622Project/thread_cleaned_sample_analysis.xlsx", 
+                           sheet = "thread_cleaned_sample.csv",
+                           col_types = c("skip", "numeric", "numeric",
+                                         "text", "text", "text",
+                                         "numeric", "text", "text",
+                                         "text", "text", "text"))
+head(data)
+head(data_sample)
+dim(data)
+dim(data_sample)
+
+```
+
+# Changing Text and Title to unigram
+
+```{r}
+library(word2vec)
+train_word2vec_model <- function(title_column,
+                                 text_column,
+                                 type = "cbow",
+                                 dim = 100,
+                                 window = 5,
+                                 iter = 10,
+                                 min_count = 1,
+                                 return_model = TRUE) {
+  
+  # Step 0: Replace NA with empty strings
+  title_column[is.na(title_column)] <- ""
+  text_column[is.na(text_column)] <- ""
+  
+  # Step 1: Combine title and text
+  combined_text <- paste(title_column, text_column, sep = " ")
+
+  # Step 2: Clean the text
+  clean_text <- tolower(combined_text)
+  clean_text <- gsub("[^a-z\\s]", "", clean_text)
+  clean_text <- gsub("\\s+", " ", clean_text)
+  
+  # Step 3: Tokenize
+  tokens <- word_tokenizer(clean_text)
+  
+  # Step 4: Prepare training data
+  cleaned_sentences <- sapply(tokens, paste, collapse = " ")
+  
+  # Step 5: Train Word2Vec model
+  model <- word2vec(
+    x = cleaned_sentences,
+    type = type,
+    dim = dim,
+    window = window,
+    iter = iter,
+    min_count = min_count
+  )
+  
+  # Step 6: Return model or embedding matrix
+  if (return_model) {
+    return(model)
+  } else {
+    return(as.matrix(model))
+  }
+}
+
+
+```
+
+```{r}
+model_word_2vec <- train_word2vec_model(data_sample$title, 
+                                        data_sample$text)
+```
+
+```{r}
+library(text2vec)
+library(word2vec)
+library(e1071)         # for SVM
+library(rpart)         # for decision tree
+library(caret)         # for evaluation
+library(dplyr)
+
+# Step 1: Reuse your cleaned text generator
+generate_cleaned_sentences <- function(title_column, text_column) {
+  title_column[is.na(title_column)] <- ""
+  text_column[is.na(text_column)] <- ""
+  combined <- paste(title_column, text_column, sep = " ")
+  cleaned <- tolower(combined)
+  cleaned <- gsub("[^a-z\\s]", "", cleaned)
+  cleaned <- gsub("\\s+", " ", cleaned)
+  tokens <- text2vec::word_tokenizer(cleaned)
+  sentences <- sapply(tokens, paste, collapse = " ")
+  return(sentences)
+}
+
+# Step 2: Get cleaned sentences
+sentences <- generate_cleaned_sentences(data_sample$title,
+                                        data_sample$text)
+
+# Step 3: Get Word2Vec embeddings for each document
+get_sentence_embedding <- function(model, sentence) {
+  words <- unlist(strsplit(sentence, " "))
+  embeddings <- predict(model, newdata = words, type = "embedding")
+  colMeans(embeddings, na.rm = TRUE)
+}
+
+# Apply to all sentences
+X <- t(sapply(sentences, function(s) get_sentence_embedding(model_word_2vec, s)))
+
+# Step 4: Prepare target variable
+y <- as.factor(data_sample$`Sentiment Full`)
+
+# Optional: Remove rows with NA in embedding (caused by unseen words)
+valid_rows <- complete.cases(X)
+X <- X[valid_rows, ]
+y <- y[valid_rows]
+
+# Step 5: Train/test split
+set.seed(123)
+train_idx <- sample(seq_len(nrow(X)), size = 0.8 * nrow(X))
+X_train <- X[train_idx, ]
+X_test  <- X[-train_idx, ]
+y_train <- y[train_idx]
+y_test  <- y[-train_idx]
+
+# Step 6a: Train SVM
+svm_model <- svm(X_train, y_train, kernel = "linear")
+svm_pred  <- predict(svm_model, X_test)
+
+# Step 6b: Train Decision Tree
+tree_model <- rpart(y_train ~ ., data = data.frame(X_train, y_train))
+tree_pred  <- predict(tree_model, newdata = data.frame(X_test), type = "class")
+
+# Step 7: Evaluate both models
+svm_cm <- confusionMatrix(svm_pred, y_test)
+tree_cm <- confusionMatrix(tree_pred, y_test)
+
+cat("🔍 SVM Performance:\n")
+print(svm_cm)
+
+cat("\n🌳 Decision Tree Performance:\n")
+print(tree_cm)
+```
+
+```{r}
+model_word_2vec_full <- train_word2vec_model(data$title, 
+                                        data$text)
+# Combine title and text (handle NA properly)
+sentences <- mapply(function(t, txt) {
+  paste0(ifelse(is.na(t), "", t), " ", ifelse(is.na(txt), "", txt))
+}, data$title, data$text)
+
+# Ensure all sentences are character
+sentences <- as.character(sentences)
+
+# Clean text (optional: include your clean_text() function here if used earlier)
+
+# Generate embeddings safely, skipping bad ones
+get_valid_embedding <- function(sentence) {
+  if (is.na(sentence) || !is.character(sentence) || sentence == "") return(NULL)
+  tryCatch({
+    emb <- get_sentence_embedding(model_word_2vec_full, sentence)
+    if (is.null(emb) || !is.numeric(emb)) return(NULL)
+    return(emb)
+  }, error = function(e) {
+    return(NULL)
+  })
+}
+
+# Apply safely
+embeddings <- lapply(sentences, get_valid_embedding)
+
+# Filter out NULLs and convert to matrix
+valid_embeddings <- Filter(Negate(is.null), embeddings)
+X <- do.call(rbind, valid_embeddings)
+
+colnames(X) <- colnames(X_train)
+```
+
+```{r}
+data$Sentiment_ML_predicted <- predict(tree_model, newdata = data.frame(X), type = 'class')
+```
+
+```{r}
+write_csv(data, file = 'ML_Predicted_Sentiment.csv')
+```
