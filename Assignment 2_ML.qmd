@@ -145,7 +145,7 @@ y_train <- y[train_idx]
 y_test  <- y[-train_idx]
 
 # Step 6a: Train SVM
-svm_model <- svm(X_train, y_train, kernel = "linear")
+svm_model <- svm(X_train, y_train, kernel = "radial", scale = TRUE, cost = 10, probability = TRUE)
 svm_pred  <- predict(svm_model, X_test)
 
 # Step 6b: Train Decision Tree
@@ -156,10 +156,10 @@ tree_pred  <- predict(tree_model, newdata = data.frame(X_test), type = "class")
 svm_cm <- confusionMatrix(svm_pred, y_test)
 tree_cm <- confusionMatrix(tree_pred, y_test)
 
-cat("🔍 SVM Performance:\n")
+cat(" SVM Performance:\n")
 print(svm_cm)
 
-cat("\n🌳 Decision Tree Performance:\n")
+cat("\n Decision Tree Performance:\n")
 print(tree_cm)
 ```
 
@@ -231,3 +231,12 @@ head(data_sample)
 ```{r}
 write.csv(data_sample, "MLSentiment.csv")
 ```
+
+```{r}
+library(rpart.plot)
+rpart.plot(tree_model, type = 4, extra = 101, fallen.leaves = TRUE, cex = 0.6)
+```
+
+
+
+
